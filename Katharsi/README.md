@@ -1,7 +1,16 @@
-# Katharsi 🔥
+# The Destroyer 🔥
 
 A run-when-you-need-it Discord admin bot for your own servers. No message-by-message
 clicking — everything is done through Discord's REST API in bulk.
+
+## Contents
+- [Commands](#commands)
+- [Setup](#setup)
+- [Running it (local)](#running-it-local)
+- [Running it (Docker)](#running-it-docker)
+- [Troubleshooting](#troubleshooting)
+- [Cost check](#cost-check)
+- [Permissions note](#permissions-note)
 
 ## Commands
 
@@ -20,28 +29,78 @@ export them (e.g. with a logging bot) before nuking.
 
 ## Setup
 
-1. **Install Node.js 18+** if you don't have it.
+1. **Install Node.js 18+** if running locally (skip if you're only using Docker).
 2. Create an application at https://discord.com/developers/applications → **Bot** tab
-   → Reset Token → copy it.
-3. Under **OAuth2 → URL Generator**, check scopes `bot` and `applications.commands`,
-   and bot permission `Administrator` (simplest — or manually grant `Manage Channels`
-   + `Manage Roles` + `Send Messages` if you want to scope it down). Use the
-   generated URL to invite the bot to your server(s).
-4. In this folder:
-   ```bash
-   npm install
-   cp .env.example .env
-   # fill in DISCORD_TOKEN, CLIENT_ID, and (optional) GUILD_ID in .env
-   npm run deploy   # registers the slash commands
-   npm start        # starts the bot — stop it any time with Ctrl+C
-   ```
-5. Because you said you'll only run it when needed: just `npm start` before you want
-   to use it and `Ctrl+C` when you're done. No server = no bot online, no cost.
+   → Reset Token → copy it. Also copy the **Application ID** from the General
+   Information page — that's your `CLIENT_ID`.
+3. Under **OAuth2 → URL Generator**, check **both** `bot` and `applications.commands`
+   scopes (missing `applications.commands` is the #1 reason slash commands never
+   appear), and bot permission `Administrator` (simplest — or manually grant
+   `Manage Channels` + `Manage Roles` + `Send Messages` if you want to scope it
+   down). Use the generated URL to invite the bot to your server(s).
+4. Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN`, `CLIENT_ID`, and
+   optionally `GUILD_ID` (see [Troubleshooting](#troubleshooting) for what that
+   does).
+
+## Running it (local)
+
+There are **two separate steps** — this trips people up, so it's worth saying
+explicitly: `npm start` logs the bot in and opens its connection to Discord, but it
+does **not** register your slash commands. Registration is a one-off (or
+one-off-per-change) call to Discord's API, done by a *different* script.
+
+```bash
+npm install
+npm run deploy   # registers /nuke /fullnuke /backup /restore with Discord — run this first
+npm start        # logs the bot in — stop any time with Ctrl+C
+```
+
+You only need to re-run `npm run deploy` when you add, remove, or change a command.
+`npm start` is what you run every time you just want the bot online.
+
+## Running it (Docker)
+
+Same two steps, just run inside (or against) the container:
+
+```bash
+# build/run your container as usual, then, one time (or after any command change):
+docker exec -it katharsi node deploy-commands.js
+
+# check it worked — you should see "✅ Commands registered."
+docker logs katharsi
+```
+
+If your Dockerfile's `CMD`/`ENTRYPOINT` only runs `npm start`, the container will
+show "online" in the logs (like yours did) but slash commands still won't exist
+until `deploy-commands.js` has been run at least once with the same `.env` the
+container uses.
+
+## Troubleshooting
+
+**Bot shows "online" in logs, but typing `/` shows nothing:**
+Almost always means `deploy-commands.js` hasn't been run yet — see above. Run it
+and check its own console output for `✅ Commands registered.` vs an error.
+
+**`GUILD_ID` — set it or not?**
+Leave it blank → commands register *globally*, which can take up to an hour to
+propagate to a server, and it can take a bit for Discord to actually push the update
+to your client. Set it to a specific server ID → commands register instantly in
+*that one server only*. While testing, set it; leave it blank once you're happy and
+want the bot usable in multiple servers.
+
+**Deploy script errors:**
+- `401 Unauthorized` → `DISCORD_TOKEN` is wrong or was regenerated since you copied it.
+- `Missing Access` / `50001` → `CLIENT_ID` doesn't match this bot's application, or
+  the invite URL didn't include the `applications.commands` scope — re-invite the
+  bot with a corrected URL.
+
+**Commands still not showing after a successful deploy:**
+Restart your Discord client (desktop/web cache slash command lists per-session).
 
 ## Cost check
 
 - **Money:** $0. Discord's Bot API is free; you're running the process on your own
-  machine, not paying for hosting.
+  machine/container, not paying for hosting.
 - **Compute:** trivial. It's an idle WebSocket connection until you invoke a command
   — a few MB of RAM, negligible CPU. A `/fullnuke` on a ~50-channel server finishes
   in a couple seconds (bounded by Discord's rate limits, roughly 5 deletes/sec on
