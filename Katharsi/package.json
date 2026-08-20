@@ -1,0 +1,15 @@
+{
+  "name": "the-destroyer",
+  "version": "1.0.0",
+  "description": "Personal Discord admin bot: instant channel nuke, full server nuke, and backup/restore.",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "deploy": "node deploy-commands.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
+  }
+}
