@@ -1,7 +1,7 @@
 services:
 
   katharsi:
-    build: ./katharsi
+    build: ./Katharsi
     container_name: katharsi
     restart: unless-stopped
     env_file:
