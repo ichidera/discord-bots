@@ -25,6 +25,6 @@ If your services rely on environment variables, create a `.env` file at the repo
 
 Location: `Katharsi/`
 
-Brief: Moderation and utility Discord bot built with `discord.js`.
+Brief: Run-when-you-need-it admin bot for backing up, nuking, and restoring server structure.
 
 
