@@ -17,8 +17,6 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-If your services rely on environment variables, create a `.env` file at the repository root (see `Katharsi/.env` for an example) and Docker Compose will pick it up automatically.
-
 ## Bots
 
 ### Katharsi
