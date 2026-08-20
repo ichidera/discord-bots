@@ -1,0 +1,8 @@
+services:
+
+  katharsi:
+    build: ./katharsi
+    container_name: katharsi
+    restart: unless-stopped
+    env_file:
+      - .env\
