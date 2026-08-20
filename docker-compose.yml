@@ -5,4 +5,4 @@ services:
     container_name: katharsi
     restart: unless-stopped
     env_file:
-      - .Katharsi/.env
+      - ./Katharsi/.env
