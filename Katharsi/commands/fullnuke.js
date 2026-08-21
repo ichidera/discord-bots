@@ -2,6 +2,7 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   ChannelType,
+  MessageFlags,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -16,7 +17,7 @@ module.exports = {
 
   async execute(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ You need Administrator to do that.', ephemeral: true });
+      return interaction.reply({ content: '❌ You need Administrator to do that.', flags: MessageFlags.Ephemeral });
     }
 
     const confirmRow = new ActionRowBuilder().addComponents(
@@ -27,7 +28,7 @@ module.exports = {
     await interaction.reply({
       content: `⚠️ This will delete **every channel and category** in **${interaction.guild.name}**. A backup will be saved so you can \`/restore\` the structure (channel contents/messages can't be restored — Discord doesn't allow that via API). Confirm within 15s.`,
       components: [confirmRow],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     let button;

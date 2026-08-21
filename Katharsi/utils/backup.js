@@ -1,4 +1,4 @@
-// the-destroyer/utils/backup.js
+// Katharsi/utils/backup.js
 const fs = require('fs');
 const path = require('path');
 const { ChannelType } = require('discord.js');

@@ -1,4 +1,4 @@
-# the-destroyer/.dockerignore
+# Katharsi/.dockerignore
 node_modules
 npm-debug.log
 .env

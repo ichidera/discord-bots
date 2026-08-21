@@ -1,81 +1,120 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
-const { loadBackup } = require('../utils/backup');
+// Katharsi/commands/restore.js
+const fs = require('fs');
+const path = require('path');
+const {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+  InteractionContextType,
+  ApplicationIntegrationType,
+  StringSelectMenuBuilder,
+  ActionRowBuilder,
+} = require('discord.js');
+const { restoreGuildFromBackup } = require('../utils/restore');
+
+const BACKUP_DIR = path.join(__dirname, '..', 'backups');
 
 module.exports = {
+  // Registered as a GLOBAL command (see deploy-commands.js), not a guild
+  // command like the others — that's what lets it be invoked from a DM with
+  // the bot, not just from inside a server.
+  global: true,
+
   data: new SlashCommandBuilder()
     .setName('restore')
-    .setDescription('Rebuild categories/channels from the last backup taken in this server.')
+    .setDescription("Rebuild a server's channel/category structure from its last backup.")
+    // GuildInstall: this command stays tied to servers you've added the bot
+    // to (not a personal user-install). Contexts adds BotDM on top of the
+    // normal Guild context, so it also works in your DM with the bot.
+    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
+    .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ You need Administrator to do that.', ephemeral: true });
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
-    const backup = loadBackup(interaction.guild.id);
-    if (!backup) {
-      return interaction.editReply('❌ No backup found for this server. Run `/backup` or `/fullnuke` first to create one.');
-    }
-
-    const guild = interaction.guild;
-    const idMap = new Map(); // old channel/category id -> new channel object
-
-    // 1. Recreate categories first
-    const categoryEntries = backup.channels.filter((c) => c.type === ChannelType.GuildCategory);
-    for (const cat of categoryEntries) {
-      try {
-        const overwrites = cat.permissionOverwrites
-          .filter((po) => guild.roles.cache.has(po.id) || guild.members.cache.has(po.id))
-          .map((po) => ({ id: po.id, type: po.type, allow: BigInt(po.allow), deny: BigInt(po.deny) }));
-
-        const newCat = await guild.channels.create({
-          name: cat.name,
-          type: ChannelType.GuildCategory,
-          permissionOverwrites: overwrites,
-        });
-        idMap.set(cat.id, newCat);
-      } catch (err) {
-        console.error(`Failed to restore category ${cat.name}:`, err.message);
+    // --- Run inside a server: restore that server directly, same as before ---
+    if (interaction.inGuild()) {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You need Administrator to do that.', flags: MessageFlags.Ephemeral });
       }
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const result = await restoreGuildFromBackup(interaction.guild);
+      return interaction.editReply(result.message);
     }
 
-    // 2. Recreate everything else, attached to the new parent category if it had one
-    const otherEntries = backup.channels
-      .filter((c) => c.type !== ChannelType.GuildCategory)
-      .sort((a, b) => a.position - b.position);
+    // --- Run in a DM: figure out WHICH server, since the bot could be in several ---
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    let restored = 0;
-    let failed = 0;
-    for (const ch of otherEntries) {
-      try {
-        const overwrites = ch.permissionOverwrites
-          .filter((po) => guild.roles.cache.has(po.id) || guild.members.cache.has(po.id))
-          .map((po) => ({ id: po.id, type: po.type, allow: BigInt(po.allow), deny: BigInt(po.deny) }));
-
-        const parent = ch.parentId ? idMap.get(ch.parentId) : null;
-
-        await guild.channels.create({
-          name: ch.name,
-          type: ch.type,
-          parent: parent ? parent.id : undefined,
-          topic: ch.topic || undefined,
-          nsfw: ch.nsfw || false,
-          bitrate: ch.bitrate || undefined,
-          userLimit: ch.userLimit || undefined,
-          permissionOverwrites: overwrites,
-        });
-        restored++;
-      } catch (err) {
-        console.error(`Failed to restore channel ${ch.name}:`, err.message);
-        failed++;
-      }
+    if (!fs.existsSync(BACKUP_DIR)) {
+      return interaction.editReply('❌ No backups exist yet anywhere. Run `/backup` or `/fullnuke` in a server first.');
     }
 
-    await interaction.editReply(
-      `✅ Restore complete: ${categoryEntries.length} categories, ${restored} channels rebuilt (${failed} failed). ` +
-        `Note: messages, threads, and pins can't be restored — Discord's API doesn't expose deleted message history.`
-    );
+    const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.json'));
+    const eligible = [];
+
+    for (const file of files) {
+      const guildId = file.replace(/\.json$/, '');
+      const guild = interaction.client.guilds.cache.get(guildId);
+      if (!guild) continue; // bot isn't (or no longer is) in that server
+
+      // Only offer servers where YOU currently have Administrator — this is
+      // the actual fix for the ambiguity: instead of guessing, we list only
+      // servers you're both in and an admin of, and you pick explicitly.
+      const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+      if (!member || !member.permissions.has(PermissionFlagsBits.Administrator)) continue;
+
+      eligible.push(guild);
+      if (eligible.length >= 25) break; // Discord select menu hard cap
+    }
+
+    if (eligible.length === 0) {
+      return interaction.editReply(
+        "❌ No backups found for a server where you're currently an Administrator. " +
+          'Backups only exist for servers where `/backup` or `/fullnuke` has been run.'
+      );
+    }
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId('restore_pick_guild')
+      .setPlaceholder('Choose a server to restore')
+      .addOptions(
+        eligible.map((g) => ({
+          label: g.name.slice(0, 100),
+          value: g.id,
+          description: `${g.memberCount ?? '?'} members`,
+        }))
+      );
+
+    const reply = await interaction.editReply({
+      content: 'Which server do you want to restore?',
+      components: [new ActionRowBuilder().addComponents(menu)],
+    });
+
+    let picked;
+    try {
+      picked = await reply.awaitMessageComponent({
+        filter: (i) => i.user.id === interaction.user.id && i.customId === 'restore_pick_guild',
+        time: 30000,
+      });
+    } catch {
+      return interaction.editReply({ content: '⌛ Timed out — no server selected.', components: [] });
+    }
+
+    const guildId = picked.values[0];
+    const guild = interaction.client.guilds.cache.get(guildId);
+    if (!guild) {
+      return picked.update({ content: '❌ That server is no longer available.', components: [] });
+    }
+
+    // Re-check admin status at the moment of action, not just when we built
+    // the list — permissions can change in the seconds between picking and
+    // confirming.
+    const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+    if (!member || !member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return picked.update({ content: '❌ You no longer have Administrator in that server.', components: [] });
+    }
+
+    await picked.update({ content: `⏳ Restoring **${guild.name}**…`, components: [] });
+    const result = await restoreGuildFromBackup(guild);
+    await interaction.editReply(result.message);
   },
 };

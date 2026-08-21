@@ -1,5 +1,5 @@
 {
-  "name": "the-destroyer",
+  "name": "Katharsi",
   "version": "1.0.0",
   "description": "Personal Discord admin bot: instant channel nuke, full server nuke, and backup/restore.",
   "main": "index.js",

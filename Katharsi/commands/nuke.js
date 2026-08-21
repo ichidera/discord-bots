@@ -2,7 +2,9 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   ChannelType,
+  MessageFlags,
 } = require('discord.js');
+const { createBackup } = require('../utils/backup');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -20,10 +22,10 @@ module.exports = {
     const target = interaction.options.getChannel('channel') || interaction.channel;
 
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ You need Administrator to do that.', ephemeral: true });
+      return interaction.reply({ content: '❌ You need Administrator to do that.', flags: MessageFlags.Ephemeral });
     }
     if (!target || !target.clone) {
-      return interaction.reply({ content: '❌ That channel type can\'t be nuked this way.', ephemeral: true });
+      return interaction.reply({ content: '❌ That channel type can\'t be nuked this way.', flags: MessageFlags.Ephemeral });
     }
 
     // If you're nuking the channel you ran the command in, deleting it also
@@ -32,7 +34,11 @@ module.exports = {
     // what we do. That's expected, not a real failure, so we skip editReply
     // in that case and rely on the confirmation posted in the new channel.
     const selfNuke = target.id === interaction.channelId;
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    // Snapshot the server before clearing this channel too, so even a plain
+    // /nuke leaves a fresh restore point behind.
+    createBackup(interaction.guild);
 
     try {
       const position = target.position;

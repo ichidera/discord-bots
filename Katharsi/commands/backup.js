@@ -1,4 +1,5 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+// Katharsi/commands/backup.js
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { createBackup } = require('../utils/backup');
 
 module.exports = {
@@ -9,9 +10,9 @@ module.exports = {
 
   async execute(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ You need Administrator to do that.', ephemeral: true });
+      return interaction.reply({ content: '❌ You need Administrator to do that.', flags: MessageFlags.Ephemeral });
     }
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const backup = createBackup(interaction.guild);
     await interaction.editReply(
       `💾 Backed up ${backup.channels.length} channels/categories for **${interaction.guild.name}**. This overwrites the previous backup for this server.`

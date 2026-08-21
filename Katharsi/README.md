@@ -16,10 +16,29 @@ clicking — everything is done through Discord's REST API in bulk.
 
 | Command | What it does |
 |---|---|
-| `/nuke [channel]` | **Instant clear.** Clones the target channel (same name, permissions, position) and deletes the original. This is the trick real "nuke" bots use — deleting messages one-by-one is rate-limited and slow; deleting+recreating the channel is a single API round trip. |
-| `/fullnuke` | Backs up the *entire* server's channel/category structure to a local JSON file, then deletes every channel and category, and leaves behind one `#start-here` channel so you always have somewhere to run `/restore` from. Server itself is untouched — you keep the invite link, roles, members, and settings. Requires a button confirmation (15s timeout) so a stray keypress can't wipe your server. |
-| `/backup` | Snapshots the current structure without deleting anything — handy to run before you make manual changes too. |
-| `/restore` | Rebuilds categories and channels from the last backup taken in that server: names, positions, topics, NSFW flags, voice bitrate/user limits, and permission overwrites (matched back to existing roles/members). |
+| `/nuke [channel]` | **Instant clear.** Clones the target channel (same name, permissions, position) and deletes the original — recreated empty immediately. This is the trick real "nuke" bots use — deleting messages one-by-one is rate-limited and slow; deleting+recreating the channel is a single API round trip. Backs up the server first. |
+| `/delete [channel]` | **Permanent delete.** Unlike `/nuke`, the channel is *not* recreated — it's just gone, recoverable only via `/restore`. Backs up the server first. |
+| `/delete-category <category> <mode>` | Deletes a category. `mode` is a required choice: delete the category **and** every channel inside it, or delete **only** the category and leave its channels behind (uncategorized). Button-confirmed (15s timeout). Backs up the server first. |
+| `/fullnuke` | Backs up the *entire* server's channel/category structure, then deletes every channel and category, and leaves behind one `#start-here` channel so you always have somewhere to run `/restore` from. Server itself is untouched — invite link, roles, members, settings all stay. Button-confirmed (15s timeout). |
+| `/backup` | Snapshots the current structure without deleting anything — handy to run before manual changes too. |
+| `/restore` | Rebuilds categories and channels from the last backup: names, positions, topics, NSFW flags, voice bitrate/user limits, and permission overwrites (matched back to existing roles/members). **Works two ways** — see below. |
+
+### `/restore` in a server vs. in a DM
+
+- **Run inside a server** → restores that server immediately, same as every
+  other command here.
+- **Run in your DM with the bot** → the bot doesn't guess which server you mean.
+  It scans every server it shares with you, keeps only the ones where a backup
+  exists *and* you currently have Administrator, and shows you a dropdown to
+  pick from. If none qualify, it tells you why instead of failing silently.
+  Admin status is re-checked at the moment you pick, not just when the list was
+  built, in case anything changed in between.
+
+This is the one command registered **globally** rather than per-server (see
+[Setup](#setup) — it needs `applications.commands` scope and the global command
+propagation window below). Every other command stays server-scoped on purpose:
+they're destructive, so requiring you to be physically inside the server to run
+them is a feature, not a limitation.
 
 ### The one thing it can't do
 Discord's API does not expose deleted message history. `/restore` rebuilds the
@@ -38,6 +57,8 @@ export them (e.g. with a logging bot) before nuking.
    appear), and bot permission `Administrator` (simplest — or manually grant
    `Manage Channels` + `Manage Roles` + `Send Messages` if you want to scope it
    down). Use the generated URL to invite the bot to your server(s).
+   `/restore` also needs to work in DMs, which requires no extra invite step —
+   just that the two of you share a server the bot is in.
 4. Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN`, `CLIENT_ID`, and
    optionally `GUILD_ID` (see [Troubleshooting](#troubleshooting) for what that
    does).
@@ -68,13 +89,13 @@ safe to call repeatedly.
 
 ```bash
 mkdir -p backups   # do this on the HOST, once, before first run — see note below
-docker build -t the-destroyer .
+docker build -t Katharsi .
 
 docker run -d \
   --name katharsi \
   --env-file .env \
   -v $(pwd)/backups:/app/backups \
-  the-destroyer
+  Katharsi
 ```
 
 - `--env-file .env` passes in `DISCORD_TOKEN` / `CLIENT_ID` / `GUILD_ID` at
@@ -124,6 +145,18 @@ want the bot usable in multiple servers.
 
 **Commands still not showing after a successful deploy:**
 Restart your Discord client (desktop/web cache slash command lists per-session).
+
+**`/restore` doesn't show up in a DM yet:**
+It's registered as a *global* command, which can take up to an hour to propagate
+the first time (unlike the guild commands, which are instant). If it's been longer
+than that, confirm you actually share a server with the bot — DM commands only
+work between accounts that share at least one server together.
+
+**`/restore` in a DM says no eligible servers, but you know a backup exists:**
+The list only includes servers where you currently hold Administrator. If your
+role changed since the backup was made, or the bot was removed from that server,
+it won't appear — run `/restore` from inside the server directly instead, if you
+still can.
 
 **`DiscordAPIError[10002]: Unknown Application` during deploy:**
 `CLIENT_ID` in `.env` doesn't match any application. Re-copy the **Application ID**
