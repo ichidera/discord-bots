@@ -1,4 +1,4 @@
-# The Destroyer 🔥
+# Katharsi 🔥
 
 A run-when-you-need-it Discord admin bot for your own servers. No message-by-message
 clicking — everything is done through Discord's REST API in bulk.
@@ -17,7 +17,7 @@ clicking — everything is done through Discord's REST API in bulk.
 | Command | What it does |
 |---|---|
 | `/nuke [channel]` | **Instant clear.** Clones the target channel (same name, permissions, position) and deletes the original. This is the trick real "nuke" bots use — deleting messages one-by-one is rate-limited and slow; deleting+recreating the channel is a single API round trip. |
-| `/fullnuke` | Backs up the *entire* server's channel/category structure to a local JSON file, then deletes every channel and category. Server itself is untouched — you keep the invite link, roles, members, and settings. Requires a button confirmation (15s timeout) so a stray keypress can't wipe your server. |
+| `/fullnuke` | Backs up the *entire* server's channel/category structure to a local JSON file, then deletes every channel and category, and leaves behind one `#start-here` channel so you always have somewhere to run `/restore` from. Server itself is untouched — you keep the invite link, roles, members, and settings. Requires a button confirmation (15s timeout) so a stray keypress can't wipe your server. |
 | `/backup` | Snapshots the current structure without deleting anything — handy to run before you make manual changes too. |
 | `/restore` | Rebuilds categories and channels from the last backup taken in that server: names, positions, topics, NSFW flags, voice bitrate/user limits, and permission overwrites (matched back to existing roles/members). |
 
@@ -60,20 +60,48 @@ You only need to re-run `npm run deploy` when you add, remove, or change a comma
 
 ## Running it (Docker)
 
-Same two steps, just run inside (or against) the container:
+The included `Dockerfile` runs `deploy-commands.js` automatically on every
+container start, right before `index.js` — so you don't have to remember to do it
+by hand. It won't re-invite the bot or duplicate commands; Discord's registration
+endpoint just overwrites the existing command list each time, which is cheap and
+safe to call repeatedly.
 
 ```bash
-# build/run your container as usual, then, one time (or after any command change):
-docker exec -it katharsi node deploy-commands.js
+mkdir -p backups   # do this on the HOST, once, before first run — see note below
+docker build -t the-destroyer .
 
-# check it worked — you should see "✅ Commands registered."
-docker logs katharsi
+docker run -d \
+  --name katharsi \
+  --env-file .env \
+  -v $(pwd)/backups:/app/backups \
+  the-destroyer
 ```
 
-If your Dockerfile's `CMD`/`ENTRYPOINT` only runs `npm start`, the container will
-show "online" in the logs (like yours did) but slash commands still won't exist
-until `deploy-commands.js` has been run at least once with the same `.env` the
-container uses.
+- `--env-file .env` passes in `DISCORD_TOKEN` / `CLIENT_ID` / `GUILD_ID` at
+  runtime — they're deliberately **not** baked into the image (see
+  `.dockerignore`), so you're not shipping your bot token inside a container layer.
+- `-v $(pwd)/backups:/app/backups` is a **bind mount**: it maps the container's
+  `backups/` folder directly onto a `backups/` folder next to this README, on your
+  actual filesystem. This matters — a *named* volume (`-v somename:/app/backups`)
+  also persists data, but Docker stores it under `/var/lib/docker/volumes/...`,
+  invisible in `~/discord-bots`. If you went looking for the folder here and didn't
+  see it, that's why. The bind mount above fixes that: run `/backup` or `/fullnuke`
+  and you'll see `backups/<guildId>.json` appear right in this directory.
+- Run `mkdir -p backups` on the host **before** `docker run`, not after. If Docker
+  creates the folder for you on first mount, it's owned by `root`, and the
+  container runs as the non-root `node` user — writes would fail with `EACCES`.
+  Pre-creating it as your own user avoids that (works as-is on a typical
+  single-user Linux desktop, since your user and the container's `node` user both
+  default to uid 1000).
+
+Check it worked:
+```bash
+docker logs katharsi
+```
+You should see the deploy script's own output (`Registering 4 commands...` /
+`✅ Commands registered.`) followed by `🔥 Katharsi is online as ...`. If you
+only see the "online" line and no "Registering" line above it, the deploy step
+didn't run — rebuild the image to pick up the current `Dockerfile`.
 
 ## Troubleshooting
 
@@ -96,6 +124,34 @@ want the bot usable in multiple servers.
 
 **Commands still not showing after a successful deploy:**
 Restart your Discord client (desktop/web cache slash command lists per-session).
+
+**`DiscordAPIError[10002]: Unknown Application` during deploy:**
+`CLIENT_ID` in `.env` doesn't match any application. Re-copy the **Application ID**
+(not the public key, not the OAuth2 secret) from your app's General Information
+page, check for a stray space/newline, and confirm it's the same application the
+bot token in `.env` belongs to.
+
+**`DiscordAPIError[10008]: Unknown Message` in the logs after `/nuke`:**
+This happens specifically when you nuke the channel you *ran the command in* —
+deleting it also deletes the deferred reply Discord created there, so the final
+confirmation edit 404s even though the nuke itself succeeded. Fixed in
+`commands/nuke.js`: it now skips that doomed `editReply` when self-nuking and
+relies on the confirmation message already posted in the freshly cloned channel.
+
+**`/restore` doesn't respond / isn't reachable after `/fullnuke`:**
+`/fullnuke` deletes every channel — including the one you'd type `/restore` in.
+Guild slash commands also don't work from DMs (no guild context, and it'd be
+ambiguous which server you meant if the bot's in more than one). `fullnuke.js` now
+leaves behind a single `#start-here` channel specifically so `/restore` always has
+somewhere to be run from — don't delete that channel until you've either restored
+or decided you don't need to.
+
+**Backups aren't appearing in the `backups/` folder next to this README:**
+If you're running via Docker with a *named* volume (`-v somename:/app/backups`),
+the data is safely persisted but stored inside Docker's own volume storage, not as
+a visible folder here. Switch to the bind mount shown in
+[Running it (Docker)](#running-it-docker) — `-v $(pwd)/backups:/app/backups` — to
+see the JSON files appear directly in this directory.
 
 ## Cost check
 

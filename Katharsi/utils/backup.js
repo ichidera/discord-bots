@@ -1,9 +1,13 @@
+// the-destroyer/utils/backup.js
 const fs = require('fs');
 const path = require('path');
 const { ChannelType } = require('discord.js');
 
 const BACKUP_DIR = path.join(__dirname, '..', 'backups');
-if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+if (!fs.existsSync(BACKUP_DIR)) {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  console.log(`📁 Created backups directory at ${BACKUP_DIR}`);
+}
 
 function backupPath(guildId) {
   return path.join(BACKUP_DIR, `${guildId}.json`);

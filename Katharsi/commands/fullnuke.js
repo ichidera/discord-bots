@@ -73,7 +73,30 @@ module.exports = {
       }
     }
 
-    const summary = `✅ Full nuke complete on **${guild.name}**: ${deleted} deleted, ${failed} failed. Run \`/restore\` in this server any time to rebuild the structure from backup.`;
+    // Without this, the guild has ZERO channels and there is nowhere left to
+    // type "/" at all — /restore becomes unreachable from inside the server,
+    // and DMs can't run it either (a guild command has no guild context in a
+    // DM, and it would be ambiguous anyway if you're admin in more than one
+    // server). One landing channel keeps /restore reachable, on purpose,
+    // without ever needing to route restore through DMs.
+    let landing = null;
+    try {
+      landing = await guild.channels.create({
+        name: 'start-here',
+        type: ChannelType.GuildText,
+        reason: 'Landing channel left after full nuke so admins have somewhere to run /restore',
+      });
+      await landing.send(
+        `💥 **Full nuke complete.** ${deleted} deleted${failed ? `, ${failed} failed` : ''}.\n` +
+          `Run \`/restore\` **right here** to rebuild the previous structure from backup, or \`/backup\` to snapshot this clean slate instead.`
+      );
+    } catch (err) {
+      console.error('Failed to create landing channel:', err.message);
+    }
+
+    const summary =
+      `✅ Full nuke complete on **${guild.name}**: ${deleted} deleted, ${failed} failed.` +
+      (landing ? ` A #start-here channel was left behind — run \`/restore\` there.` : ` ⚠️ Couldn't create a landing channel — check the bot's Manage Channels permission.`);
     if (dmNotice) {
       await interaction.user.send(summary).catch(() => {});
     }

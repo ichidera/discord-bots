@@ -26,6 +26,12 @@ module.exports = {
       return interaction.reply({ content: '❌ That channel type can\'t be nuked this way.', ephemeral: true });
     }
 
+    // If you're nuking the channel you ran the command in, deleting it also
+    // invalidates the deferred reply Discord created inside that channel —
+    // editReply() on it 404s with "Unknown Message" (code 10008) no matter
+    // what we do. That's expected, not a real failure, so we skip editReply
+    // in that case and rely on the confirmation posted in the new channel.
+    const selfNuke = target.id === interaction.channelId;
     await interaction.deferReply({ ephemeral: true });
 
     try {
@@ -38,10 +44,14 @@ module.exports = {
         await cloned.send('💥 **Channel nuked.** Fresh start.').catch(() => {});
       }
 
-      await interaction.editReply(`✅ Nuked \`#${target.name}\` — recreated as ${cloned}.`);
+      if (!selfNuke) {
+        await interaction.editReply(`✅ Nuked \`#${target.name}\` — recreated as ${cloned}.`);
+      }
     } catch (err) {
       console.error(err);
-      await interaction.editReply(`❌ Failed to nuke that channel: ${err.message}`);
+      if (!selfNuke) {
+        await interaction.editReply(`❌ Failed to nuke that channel: ${err.message}`).catch(() => {});
+      }
     }
   },
 };
